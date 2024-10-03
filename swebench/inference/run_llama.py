@@ -10,12 +10,13 @@ from datasets import load_from_disk, load_dataset
 from peft import PeftConfig, PeftModel
 from tqdm.auto import tqdm
 from transformers import (
-    LlamaTokenizer,
+    AutoTokenizer,
+    AutoModelForCausalLM,
     StoppingCriteria,
     StoppingCriteriaList,
 )
 from pathlib import Path
-from swebench.inference.llamao.modeling_flash_llama import LlamaForCausalLM as AutoModelForCausalLM
+# from swebench.inference.llamao.modeling_flash_llama import LlamaForCausalLM as AutoModelForCausalLM
 from swebench.inference.make_datasets.utils import extract_diff
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -125,6 +126,8 @@ def load_model(model_name_or_path, peft_path):
         device_map = DEVICE_MAPS["13b"][str(torch.cuda.device_count())]
     elif "-34b" in model_name_or_path:
         device_map = DEVICE_MAPS["34b"][str(torch.cuda.device_count())]
+    elif "-3.1-8B-Instruct" in model_name_or_path:
+        device_map = "auto"
     else:
         raise ValueError(f"No device map for {model_name_or_path}")
     logger.info(f"Using device_map {device_map}")
@@ -150,7 +153,7 @@ def load_model(model_name_or_path, peft_path):
 
 def load_tokenizer(model_name_or_path):
     logger.info(f"Loading tokenizer {model_name_or_path}")
-    tokenizer = LlamaTokenizer.from_pretrained(model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     return tokenizer
 
 
@@ -368,8 +371,11 @@ def main(
         num_shards=num_shards,
     )
     logger.warning(f"output_file: {output_file}")
-    model = load_model(model_name_or_path, peft_path)
     tokenizer = load_tokenizer(model_name_or_path)
+    model = load_model(model_name_or_path, peft_path)
+    if "-3.1-8B-Instruct" in model_name_or_path:
+        terminators = [tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids("<|eot_id|>")]
+        model.config.pad_token_id = tokenizer.pad_token_id = 0  # unk
     existing_ids = get_all_existing_ids(output_file)
     dataset = load_data(
         dataset_path=dataset_path,
